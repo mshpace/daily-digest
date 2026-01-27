@@ -146,3 +146,9 @@ news:
 archive:
   enabled: true
   site_dir: "docs"
+
+  weather:
+  zips: ["35209", "35541", "59758"]
+  forecast_days: 7
+  include_alerts: true
+
