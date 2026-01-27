@@ -34,8 +34,18 @@ def _should_send(now_local: dt.datetime, send_time_local: str) -> bool:
 
 
 def _safe_add(sections: List[Dict[str, Any]], builder, name: str) -> None:
+    """
+    Call builder() exactly once. Builder may return a dict section or a list of sections.
+    Never allow None entries into sections.
+    """
     try:
-        sections.extend(builder() if isinstance(builder(), list) else [builder()])
+        result = builder()
+        if result is None:
+            raise RuntimeError(f"{name} builder returned None")
+        if isinstance(result, list):
+            sections.extend([x for x in result if x is not None])
+        else:
+            sections.append(result)
     except Exception as e:
         log(f"[section] {name} failed: {e}")
         log(traceback.format_exc())
@@ -62,24 +72,15 @@ def main() -> int:
     digest_date = now.strftime("%Y-%m-%d")
     sections: List[Dict[str, Any]] = []
 
-    # Weather
     _safe_add(sections, lambda: build_weather_section(cfg, now), "Weather")
+    _safe_add(sections, lambda: build_news_sections(cfg, now), "News")
 
-    # News (returns list)
-    try:
-        sections.extend(build_news_sections(cfg, now))
-    except Exception as e:
-        log(f"[section] News failed: {e}")
-        sections.append({"id": "error_news", "title": "News (Error)", "type": "error", "data": {"error": str(e)}})
-
-    # Calendar
     cal_provider = (cfg.get("calendar", {}) or {}).get("provider", "google")
     if cal_provider == "google":
         _safe_add(sections, lambda: build_calendar_section_google(cfg, now), "Events (Google)")
     else:
         _safe_add(sections, lambda: build_calendar_section_outlook(cfg, now), "Events (Outlook)")
 
-    # Inbox
     inbox_provider = (cfg.get("inbox_summary", {}) or {}).get("provider", "gmail")
     if inbox_provider == "gmail":
         _safe_add(sections, lambda: build_gmail_section(cfg, now), "Inbox (Gmail)")
@@ -104,6 +105,9 @@ def main() -> int:
     to_list = (cfg.get("email", {}) or {}).get("to", [])
     subject_prefix = (cfg.get("email", {}) or {}).get("subject_prefix", "Daily Digest")
 
+    # Make delivery visible in logs
+    log(f"[email] Sending to: {to_list} from: {email_from} subject: {subject_prefix} — {digest_date}")
+
     send_email_resend(
         api_key=api_key,
         email_from=email_from,
@@ -112,7 +116,7 @@ def main() -> int:
         html=email_html,
     )
 
-    log("Digest sent.")
+    log("[email] Sent (Resend accepted request).")
     return 0
 
 
