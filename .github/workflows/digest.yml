@@ -107,3 +107,20 @@ jobs:
           else
             echo "No archive changes to commit."
           fi
+
+      - name: Debug EMAIL_FROM and RESEND_API_KEY presence
+        run: |
+          python - <<'PY'
+          import os
+          def status(name):
+              v = os.getenv(name, "")
+              return "SET" if v.strip() else "MISSING/EMPTY"
+          print("RESEND_API_KEY:", status("RESEND_API_KEY"))
+          print("EMAIL_FROM:", status("EMAIL_FROM"))
+          PY
+        env:
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          EMAIL_FROM: ${{ secrets.EMAIL_FROM }}
+
+
+    
