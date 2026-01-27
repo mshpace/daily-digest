@@ -31,6 +31,7 @@ def _fetch_forecast(lat: float, lon: float, days: int) -> Dict[str, Any]:
             "daily": "temperature_2m_max,temperature_2m_min,precipitation_probability_max",
             "forecast_days": days,
             "timezone": "auto",
+            "temperature_unit": "fahrenheit",
         },
         timeout=30,
     )
