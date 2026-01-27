@@ -1,162 +1,36 @@
-timezone: "America/Chicago"
-send_time_local: "08:00"
-
-archive:
-  enabled: true
-  site_dir: "docs"
-
-weather:
-  zips: ["35209", "35541", "59758"]
-  forecast_days: 7
-  include_alerts: true
-
-email:
-  to:
-    - "msh.hill@outlook.com"
-  subject_prefix: "Daily Digest"
-
-calendar:
-  provider: "google"
-  days_ahead: 21
-
-inbox_summary:
-  provider: "gmail"
-  max_messages: 200
-  detect_questions:
-    extra_phrases: []
-
 news:
   lookback_hours: 24
-  throttle_seconds_between_sections: 7
-
   defaults:
     count: 10
-    global_and: "lang:english"
-    exclude_domains: []
-
-  watchlists:
-    competitors:
-      - Experian
-      - Equifax
-      - TransUnion
-      - FICO
-      - "LexisNexis Risk Solutions"
-      - "Dun & Bradstreet"
-      - Innovis
-      - "Credit Karma"
-
-    product_signals:
-      - launch
-      - launches
-      - introduces
-      - announced
-      - announces
-      - "new product"
-      - platform
-      - beta
-      - partnership
-      - acquisition
-      - integrates
-      - integration
-
-    ai_terms:
-      - "generative AI"
-      - GenAI
-      - "agentic AI"
-      - LLM
-      - "large language model"
-      - "machine learning"
-
-    finserv_context:
-      - banking
-      - lender
-      - underwriting
-      - "credit decisioning"
-      - "risk management"
-      - "fraud detection"
-      - "identity verification"
-      - compliance
-      - AML
-      - KYC
-
-    fraud_identity_terms:
-      - fraud
-      - "synthetic identity"
-      - "first-party fraud"
-      - "account takeover"
-      - IDV
-      - "identity verification"
-      - "document verification"
-      - deepfake
-      - "liveness detection"
-
+  rss:
+    hl: "en-US"
+    gl: "US"
+    ceid: "US:en"
   sections:
     - name: "Birmingham (Local)"
-      type: "gdelt_template"
+      rss_query: 'Birmingham Alabama OR Jefferson County Alabama'
       count: 10
-      template:
-        and:
-          - '("Birmingham" OR "Jefferson County" OR "Hoover AL" OR "Homewood AL" OR "Mountain Brook")'
-          - "(Alabama OR AL)"
 
     - name: "US (Top)"
-      type: "gdelt_template"
+      rss_query: "Top stories United States"
       count: 10
-      template:
-        and:
-          - "sourceCountry:US"
 
     - name: "World (Top)"
-      type: "gdelt_template"
+      rss_query: "Top stories World"
       count: 10
-      template:
-        and:
-          - "(world OR global OR international OR geopolitics OR diplomacy)"
 
     - name: "Markets & Economic"
-      type: "gdelt_template"
+      rss_query: '(inflation OR CPI OR Fed OR FOMC OR earnings OR recession OR GDP OR rates OR "treasury yields")'
       count: 10
-      template:
-        or:
-          - inflation
-          - "jobs report"
-          - CPI
-          - PCE
-          - Fed
-          - FOMC
-          - "treasury yields"
-          - "bond market"
-          - earnings
 
     - name: "Experian Updates (Products/Platform)"
-      type: "gdelt_template"
+      rss_query: '(Experian AND (launch OR product OR platform OR partnership OR acquisition OR integration OR earnings))'
       count: 10
-      template:
-        and:
-          - "{{watchlist:competitors|only:Experian}}"
-          - "{{watchlist:product_signals}}"
-          - '(Ascend OR "Ascend Platform" OR decisioning OR fraud OR identity OR "credit risk")'
 
-    - name: "Competitors & New Products"
-      type: "gdelt_template"
+    - name: "Competitors / New Products"
+      rss_query: '(Equifax OR TransUnion OR FICO OR "LexisNexis Risk Solutions" OR "Dun & Bradstreet") AND (launch OR product OR partnership OR acquisition OR integration)'
       count: 10
-      template:
-        and:
-          - "{{watchlist:competitors}}"
-          - "{{watchlist:product_signals}}"
 
     - name: "AI in Financial Services (Trends)"
-      type: "gdelt_template"
+      rss_query: '("generative AI" OR LLM OR "large language model" OR "agentic AI") AND (bank OR lender OR underwriting OR "credit decisioning" OR fraud OR "identity verification" OR AML OR KYC)'
       count: 10
-      template:
-        and:
-          - "{{watchlist:ai_terms}}"
-          - "{{watchlist:finserv_context}}"
-
-    - name: "Fraud / Identity / Verification (AI-driven)"
-      type: "gdelt_template"
-      count: 10
-      template:
-        and:
-          - "{{watchlist:fraud_identity_terms}}"
-          - "{{watchlist:ai_terms}}"
