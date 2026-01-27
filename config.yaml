@@ -15,12 +15,14 @@ archive:
 # Weather
 # =========================
 weather:
-  zips:
-    - "35209"
-    - "35541"
-    - "59758"
+  zips: ["35209", "35541", "59758"]
   forecast_days: 7
   include_alerts: true
+  labels:
+    "35209": "BHM"
+    "35541": "Arley"
+    "59758": "West Yellowstone"
+
 
 # =========================
 # Email (Resend)
