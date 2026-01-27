@@ -90,9 +90,12 @@ def main() -> int:
     page_html = render_digest_html(digest_date, sections)
 
     archive_url = None
-    if (cfg.get("archive", {}) or {}).get("enabled", True):
+    try:
         archive_url = write_archive(cfg, digest_date, page_html)
-        update_home_index(cfg)
+        if archive_url:
+            update_home_index(cfg)
+    except Exception as e:
+        log(f"[archive] failed: {e}")
 
     email_html = render_email_html(digest_date, sections, archive_url=archive_url)
 
@@ -105,7 +108,6 @@ def main() -> int:
     to_list = (cfg.get("email", {}) or {}).get("to", [])
     subject_prefix = (cfg.get("email", {}) or {}).get("subject_prefix", "Daily Digest")
 
-    # Make delivery visible in logs
     log(f"[email] Sending to: {to_list} from: {email_from} subject: {subject_prefix} — {digest_date}")
 
     send_email_resend(
