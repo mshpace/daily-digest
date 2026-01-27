@@ -152,3 +152,7 @@ archive:
   forecast_days: 7
   include_alerts: true
 
+email:
+  to:
+    - msh.hill@outlook.com
+
