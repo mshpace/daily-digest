@@ -1,124 +1,193 @@
 from __future__ import annotations
 
-import argparse
 import datetime as dt
-import os
-import traceback
-from typing import Any, Dict, List
+import re
+import time
+from typing import Any, Dict, List, Optional
 
-import pytz
+import requests
 
-from .config import load_config, resolve_env_vars
-from .utils import log
-from .weather import build_weather_section
-from .news import build_news_sections
-from .google_calendar import build_calendar_section_google
-from .google_gmail import build_gmail_section
-from .outlook_calendar import build_calendar_section_outlook
-from .outlook_email import build_outlook_inbox_section
-from .render import render_digest_html, render_email_html
-from .publish import write_archive, update_home_index
-from .send_resend import send_email_resend
+from .utils import log, safe_int
+
+WATCHLIST_TOKEN_RE = re.compile(r"\{\{watchlist:([a-zA-Z0-9_]+)(\|only:([^}]+))?\}\}")
 
 
-def _now_local(tz_name: str) -> dt.datetime:
-    tz = pytz.timezone(tz_name)
-    return dt.datetime.now(tz)
+def _quote_term(term: str) -> str:
+    t = (term or "").strip()
+    if not t:
+        return ""
+    if ":" in t or any(op in t for op in [" AND ", " OR ", "(", ")", '"']):
+        return t
+    if any(ch.isspace() for ch in t):
+        return f'"{t}"'
+    return t
 
 
-def _should_send(now_local: dt.datetime, send_time_local: str) -> bool:
-    hh, mm = map(int, send_time_local.split(":"))
-    target = now_local.replace(hour=hh, minute=mm, second=0, microsecond=0)
-    delta_minutes = abs((now_local - target).total_seconds()) / 60.0
-    return delta_minutes <= 15.0
+def _join_or(terms: List[str]) -> str:
+    clean = [x.strip() for x in terms if x and x.strip()]
+    if not clean:
+        return ""
+    parts = [_quote_term(x) for x in clean]
+    if len(parts) == 1:
+        return parts[0]
+    return "(" + " OR ".join(parts) + ")"
 
 
-def _safe_add(sections: List[Dict[str, Any]], builder, name: str) -> None:
-    """
-    Call builder() exactly once. Builder may return a dict section or a list of sections.
-    Never allow None entries into sections.
-    """
-    try:
-        result = builder()
-        if result is None:
-            raise RuntimeError(f"{name} builder returned None")
-        if isinstance(result, list):
-            sections.extend([x for x in result if x is not None])
-        else:
-            sections.append(result)
-    except Exception as e:
-        log(f"[section] {name} failed: {e}")
-        log(traceback.format_exc())
-        sections.append({"id": f"error_{name}", "title": f"{name} (Error)", "type": "error", "data": {"error": str(e)}})
+def _join_and(parts: List[str]) -> str:
+    clean = [p.strip() for p in parts if p and p.strip()]
+    if not clean:
+        return ""
+    if len(clean) == 1:
+        return clean[0]
+    return "(" + " AND ".join(clean) + ")"
 
 
-def main() -> int:
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--config", required=True)
-    ap.add_argument("--force-send", action="store_true", help="Bypass 08:00 local guard (testing).")
-    ap.add_argument("--no-email", action="store_true", help="Build archive only; do not send email (testing).")
-    args = ap.parse_args()
-
-    cfg = resolve_env_vars(load_config(args.config))
-
-    tz_name = cfg.get("timezone", "America/Chicago")
-    send_time = cfg.get("send_time_local", "08:00")
-    now = _now_local(tz_name)
-
-    if not args.force_send and not _should_send(now, send_time):
-        log(f"Skip: local time is {now.strftime('%Y-%m-%d %H:%M %Z')}, not within send window.")
-        return 0
-
-    digest_date = now.strftime("%Y-%m-%d")
-    sections: List[Dict[str, Any]] = []
-
-    _safe_add(sections, lambda: build_weather_section(cfg, now), "Weather")
-    _safe_add(sections, lambda: build_news_sections(cfg, now), "News")
-
-    cal_provider = (cfg.get("calendar", {}) or {}).get("provider", "google")
-    if cal_provider == "google":
-        _safe_add(sections, lambda: build_calendar_section_google(cfg, now), "Events (Google)")
-    else:
-        _safe_add(sections, lambda: build_calendar_section_outlook(cfg, now), "Events (Outlook)")
-
-    inbox_provider = (cfg.get("inbox_summary", {}) or {}).get("provider", "gmail")
-    if inbox_provider == "gmail":
-        _safe_add(sections, lambda: build_gmail_section(cfg, now), "Inbox (Gmail)")
-    else:
-        _safe_add(sections, lambda: build_outlook_inbox_section(cfg, now), "Inbox (Outlook)")
-
-    page_html = render_digest_html(digest_date, sections)
-
-    archive_url = None
-    if (cfg.get("archive", {}) or {}).get("enabled", True):
-        archive_url = write_archive(cfg, digest_date, page_html)
-        update_home_index(cfg)
-
-    email_html = render_email_html(digest_date, sections, archive_url=archive_url)
-
-    if args.no_email:
-        log("No-email mode: archive built; email not sent.")
-        return 0
-
-    api_key = os.environ["RESEND_API_KEY"]
-    email_from = os.environ["EMAIL_FROM"]
-    to_list = (cfg.get("email", {}) or {}).get("to", [])
-    subject_prefix = (cfg.get("email", {}) or {}).get("subject_prefix", "Daily Digest")
-
-    # Make delivery visible in logs
-    log(f"[email] Sending to: {to_list} from: {email_from} subject: {subject_prefix} — {digest_date}")
-
-    send_email_resend(
-        api_key=api_key,
-        email_from=email_from,
-        email_to=to_list,
-        subject=f"{subject_prefix} — {digest_date}",
-        html=email_html,
-    )
-
-    log("[email] Sent (Resend accepted request).")
-    return 0
+def _expand_watchlist_tokens(text: str, watchlists: Dict[str, List[str]]) -> str:
+    def repl(m: re.Match) -> str:
+        name = m.group(1)
+        only_val = (m.group(3) or "").strip() if m.group(2) else ""
+        if name not in watchlists:
+            raise KeyError(f"Missing watchlist '{name}' in config.yaml")
+        terms = watchlists[name]
+        if only_val:
+            terms = [t for t in terms if t.strip().lower() == only_val.lower()]
+        return _join_or([str(t) for t in terms])
+    return WATCHLIST_TOKEN_RE.sub(repl, text)
 
 
-if __name__ == "__main__":
-    raise SystemExit(main())
+def _build_query_from_template(
+    template: Optional[Dict[str, Any]],
+    watchlists: Dict[str, List[str]],
+    global_and: str = "",
+    exclude_domains: Optional[List[str]] = None,
+) -> str:
+    exclude_domains = exclude_domains or []
+    and_parts: List[str] = []
+
+    template = template or {}
+    or_terms = template.get("or", [])
+    if isinstance(or_terms, list) and or_terms:
+        and_parts.append(_join_or([str(x) for x in or_terms]))
+
+    and_list = template.get("and", [])
+    if isinstance(and_list, list):
+        for item in and_list:
+            frag = str(item).strip()
+            if frag:
+                frag = _expand_watchlist_tokens(frag, watchlists)
+                and_parts.append(frag)
+
+    if global_and:
+        and_parts.append(str(global_and).strip())
+
+    if exclude_domains:
+        ex = [f"domain:{d.strip()}" for d in exclude_domains if d and d.strip()]
+        if ex:
+            and_parts.append(f"-({_join_or(ex)})")
+
+    return _join_and(and_parts)
+
+
+def _gdelt_search(query: str, lookback_hours: int, max_items: int) -> List[Dict[str, Any]]:
+    now_utc = dt.datetime.now(dt.timezone.utc)
+    start = now_utc - dt.timedelta(hours=lookback_hours)
+    start_str = start.strftime("%Y%m%d%H%M%S")
+
+    params = {
+        "query": query,
+        "mode": "ArtList",
+        "format": "json",
+        "maxrecords": max_items,
+        "startdatetime": start_str,
+        "sort": "HybridRel",
+    }
+
+    # Backoff policy: 429/5xx -> retry
+    backoffs = [1, 2, 4, 8]  # seconds
+    last_err: Optional[Exception] = None
+
+    for attempt, wait_s in enumerate([0] + backoffs):
+        if wait_s:
+            time.sleep(wait_s)
+
+        try:
+            r = requests.get("https://api.gdeltproject.org/api/v2/doc/doc", params=params, timeout=30)
+            if r.status_code in (429, 500, 502, 503, 504):
+                raise RuntimeError(f"GDELT HTTP {r.status_code}: {r.text[:200]}")
+            r.raise_for_status()
+            data = r.json()
+            articles = data.get("articles", []) or []
+            out: List[Dict[str, Any]] = []
+            for a in articles[:max_items]:
+                out.append(
+                    {
+                        "title": a.get("title") or "",
+                        "domain": a.get("domain") or "",
+                        "url": a.get("url") or "",
+                        "seendate": a.get("seendate") or "",
+                    }
+                )
+            return out
+
+        except Exception as e:
+            last_err = e
+            if attempt == len(backoffs):
+                break
+
+    raise last_err or RuntimeError("GDELT failed")
+
+
+def build_news_sections(cfg: Dict[str, Any], now: dt.datetime) -> List[Dict[str, Any]]:
+    news_cfg = cfg.get("news", {}) or {}
+    defaults = news_cfg.get("defaults", {}) or {}
+
+    global_and = str(defaults.get("global_and", "") or "").strip()
+    exclude_domains = defaults.get("exclude_domains", []) or []
+
+    base_lookback = safe_int(news_cfg.get("lookback_hours", 24), 24)
+    watchlists = news_cfg.get("watchlists", {}) or {}
+    throttle_s = float(news_cfg.get("throttle_seconds_between_sections", 1.5))
+
+    out_sections: List[Dict[str, Any]] = []
+    for idx, s in enumerate((news_cfg.get("sections", []) or [])):
+        name = s.get("name", "News")
+        s_type = s.get("type", "gdelt_template")
+        count = safe_int(s.get("count", defaults.get("count", 10)), 10)
+        lookback = safe_int(s.get("lookback_hours", base_lookback), base_lookback)
+
+        # small throttle between sections to reduce 429s
+        if idx > 0 and throttle_s > 0:
+            time.sleep(throttle_s)
+
+        try:
+            if s_type == "gdelt":
+                query = str(s["query"])
+            else:
+                query = _build_query_from_template(
+                    template=s.get("template", {}) or {},
+                    watchlists=watchlists,
+                    global_and=global_and,
+                    exclude_domains=exclude_domains,
+                )
+
+            items = _gdelt_search(query=query, lookback_hours=lookback, max_items=count)
+            out_sections.append(
+                {
+                    "id": f"news_{name.lower().replace(' ', '_').replace('/', '_')}",
+                    "title": f"News — {name}",
+                    "type": "news",
+                    "data": {"items": items, "count": count, "lookback_hours": lookback, "query": query},
+                }
+            )
+        except Exception as e:
+            log(f"[news] section '{name}' failed: {e}")
+            out_sections.append(
+                {
+                    "id": f"news_{name.lower().replace(' ', '_').replace('/', '_')}",
+                    "title": f"News — {name}",
+                    "type": "news",
+                    "data": {"items": [], "count": count, "lookback_hours": lookback, "query": "", "error": str(e)},
+                }
+            )
+
+    return out_sections
