@@ -1,0 +1,145 @@
+news:
+  lookback_hours: 24
+
+  # Global controls for news (optional)
+  defaults:
+    count: 10
+    # If set, appended to every query
+    global_and: 'lang:english'
+    # If set, appended as a negated block (best effort)
+    exclude_domains: []
+      # - "example.com"
+    # Optional: boost recency by using more hours for "fast" sections
+    # (you can override per section)
+    # lookback_hours: 24
+
+  watchlists:
+    # Competitors / adjacent vendors (edit freely)
+    competitors:
+      - Experian
+      - Equifax
+      - TransUnion
+      - FICO
+      - "LexisNexis Risk Solutions"
+      - "Dun & Bradstreet"
+      - Innovis
+      - "Credit Karma"
+
+    # Phrases that indicate launches / deals / product activity
+    product_signals:
+      - launch
+      - launches
+      - introduces
+      - announced
+      - announces
+      - "new product"
+      - platform
+      - beta
+      - partnership
+      - acquisition
+      - integrates
+      - integration
+
+    # AI terms
+    ai_terms:
+      - "generative AI"
+      - GenAI
+      - "agentic AI"
+      - LLM
+      - "large language model"
+      - "machine learning"
+
+    # Financial services context terms
+    finserv_context:
+      - banking
+      - lender
+      - underwriting
+      - "credit decisioning"
+      - "risk management"
+      - "fraud detection"
+      - "identity verification"
+      - compliance
+      - AML
+      - KYC
+
+    # Fraud / identity threat terms
+    fraud_identity_terms:
+      - fraud
+      - "synthetic identity"
+      - "first-party fraud"
+      - "account takeover"
+      - IDV
+      - "identity verification"
+      - "document verification"
+      - deepfake
+      - "liveness detection"
+
+  sections:
+    - name: "Birmingham (Local)"
+      type: "gdelt_template"
+      count: 10
+      template:
+        and:
+          - '("Birmingham" OR "Jefferson County")'
+          - "(Alabama OR AL)"
+
+    - name: "US (Top)"
+      type: "gdelt_template"
+      count: 10
+      template:
+        and:
+          - "sourceCountry:US"
+
+    - name: "World (Top)"
+      type: "gdelt_template"
+      count: 10
+      template:
+        # Rely on defaults.global_and = lang:english
+
+    - name: "Markets & Economic"
+      type: "gdelt_template"
+      count: 10
+      template:
+        or:
+          - inflation
+          - "jobs report"
+          - CPI
+          - PCE
+          - Fed
+          - FOMC
+          - "treasury yields"
+          - "bond market"
+          - earnings
+
+    - name: "Experian Updates (Products/Platform)"
+      type: "gdelt_template"
+      count: 10
+      template:
+        and:
+          - "{{watchlist:competitors|only:Experian}}"
+          - "{{watchlist:product_signals}}"
+          - '(Ascend OR "Ascend Platform" OR decisioning OR fraud OR identity OR "credit risk")'
+
+    - name: "Competitors & New Products"
+      type: "gdelt_template"
+      count: 10
+      template:
+        and:
+          - "{{watchlist:competitors}}"
+          - "{{watchlist:product_signals}}"
+
+    - name: "AI in Financial Services (Trends)"
+      type: "gdelt_template"
+      count: 10
+      template:
+        and:
+          - "{{watchlist:ai_terms}}"
+          - "{{watchlist:finserv_context}}"
+
+    - name: "Fraud / Identity / Verification (AI-driven)"
+      type: "gdelt_template"
+      count: 10
+      template:
+        and:
+          - "{{watchlist:fraud_identity_terms}}"
+          - "{{watchlist:ai_terms}}"
