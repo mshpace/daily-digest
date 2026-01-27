@@ -47,4 +47,4 @@ def _has_question(text: str, extra_phrases: List[str]) -> bool:
 
 
 def build_gmail_section(cfg: Dict[str, Any], now: dt.datetime) -> Dict[str, Any]:
-    inbox_cfg = cfg.get("inbox_summary"
+    inbox_cfg = cfg.get("inbox_summary")
