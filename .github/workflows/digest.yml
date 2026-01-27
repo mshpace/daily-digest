@@ -1,0 +1,109 @@
+name: Daily Digest
+
+on:
+  # Manual run for testing
+  workflow_dispatch:
+    inputs:
+      force_send:
+        description: "Bypass the 08:00 local send-time guard (testing)"
+        required: false
+        default: "false"
+        type: choice
+        options:
+          - "false"
+          - "true"
+      no_email:
+        description: "Build archive only; do not send email (testing)"
+        required: false
+        default: "false"
+        type: choice
+        options:
+          - "false"
+          - "true"
+      config_path:
+        description: "Path to config file"
+        required: false
+        default: "config.yaml"
+        type: string
+
+  # Scheduled runs. GitHub cron uses UTC.
+  # We run hourly and let the script decide whether to send (near 08:00 America/Chicago).
+  schedule:
+    - cron: "15 * * * *"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: daily-digest
+  cancel-in-progress: false
+
+jobs:
+  run-digest:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run digest
+        env:
+          # Email (Resend)
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          EMAIL_FROM: ${{ secrets.EMAIL_FROM }}
+
+          # Google OAuth (Gmail + Calendar)
+          GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
+          GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
+          GOOGLE_REFRESH_TOKEN: ${{ secrets.GOOGLE_REFRESH_TOKEN }}
+
+          # Optional Microsoft Graph placeholders (future)
+          MS_TENANT_ID: ${{ secrets.MS_TENANT_ID }}
+          MS_CLIENT_ID: ${{ secrets.MS_CLIENT_ID }}
+          MS_CLIENT_SECRET: ${{ secrets.MS_CLIENT_SECRET }}
+          MS_REFRESH_TOKEN: ${{ secrets.MS_REFRESH_TOKEN }}
+        run: |
+          CONFIG_PATH="${{ github.event.inputs.config_path }}"
+          FORCE_SEND="${{ github.event.inputs.force_send }}"
+          NO_EMAIL="${{ github.event.inputs.no_email }}"
+
+          # Defaults when running on schedule (inputs are empty)
+          if [ -z "$CONFIG_PATH" ]; then CONFIG_PATH="config.yaml"; fi
+          if [ -z "$FORCE_SEND" ]; then FORCE_SEND="false"; fi
+          if [ -z "$NO_EMAIL" ]; then NO_EMAIL="false"; fi
+
+          ARGS="--config $CONFIG_PATH"
+
+          if [ "$FORCE_SEND" = "true" ]; then
+            ARGS="$ARGS --force-send"
+          fi
+
+          if [ "$NO_EMAIL" = "true" ]; then
+            ARGS="$ARGS --no-email"
+          fi
+
+          python -m src.main $ARGS
+
+      - name: Commit archive updates (docs/)
+        # Only commit if files changed (docs/YYYY-MM-DD/index.html + docs/index.html)
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          if [ -n "$(git status --porcelain docs/)" ]; then
+            git add docs/
+            git commit -m "Update digest archive"
+            git push
+          else
+            echo "No archive changes to commit."
+          fi
