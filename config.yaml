@@ -143,3 +143,6 @@ news:
         and:
           - "{{watchlist:fraud_identity_terms}}"
           - "{{watchlist:ai_terms}}"
+archive:
+  enabled: true
+  site_dir: "docs"
