@@ -1,6 +1,106 @@
 news:
   lookback_hours: 24
 
+  # Helps avoid rate limiting by spacing calls (recommended)
+  throttle_seconds_between_sections: 1.5
+
+  defaults:
+    count: 10
+    # Keep results in English + US-centric where relevant.
+    global_and: "lang:english"
+
+    # Optional: exclude noisy domains if you want
+    exclude_domains: []
+
+  watchlists:
+    competitors:
+      - "Equifax"
+      - "TransUnion"
+      - "FICO"
+      - "LexisNexis"
+      - "Moody's Analytics"
+      - "S&P Global"
+      - "Plaid"
+      - "Stripe"
+      - "Jumio"
+      - "Onfido"
+      - "Socure"
+      - "Trulioo"
+
+    topics_finserv_ai:
+      - "generative AI"
+      - "large language model"
+      - "AI underwriting"
+      - "AI credit decisioning"
+      - "fraud detection"
+      - "identity verification"
+      - "AML"
+      - "KYC"
+      - "open banking"
+      - "financial crime"
+      - "risk management"
+
+    topics_products:
+      - "product launch"
+      - "new product"
+      - "partnership"
+      - "acquisition"
+      - "integration"
+
+  sections:
+    - name: "Birmingham (Local)"
+      type: gdelt_template
+      count: 10
+      template:
+        and:
+          - '(Birmingham OR "Jefferson County" OR "Hoover AL" OR "Homewood AL" OR "Mountain Brook")'
+          - "(Alabama OR AL)"
+
+    - name: "US (Top)"
+      type: gdelt_template
+      count: 10
+      template:
+        and:
+          - "sourceCountry:US"
+
+    - name: "World (Top)"
+      type: gdelt_template
+      count: 10
+      template:
+        and:
+          - "(world OR global OR international OR geopolitics OR diplomacy)"
+
+    - name: "Markets & Economic"
+      type: gdelt_template
+      count: 10
+      template:
+        and:
+          - "(inflation OR CPI OR PCE OR Fed OR FOMC OR treasury yields OR jobs report OR earnings OR recession OR GDP OR rates OR markets OR stocks OR bonds)"
+
+    - name: "Experian Updates (Products/Platform)"
+      type: gdelt_template
+      count: 10
+      template:
+        and:
+          - "(Experian AND (product OR platform OR launch OR partnership OR acquisition OR integration OR earnings))"
+
+    - name: "Competitors / New Products"
+      type: gdelt_template
+      count: 10
+      template:
+        and:
+          - "{{watchlist:competitors}}"
+          - "(product launch OR new product OR partnership OR acquisition OR integration OR earnings)"
+
+    - name: "AI in Financial Services (Trends)"
+      type: gdelt_template
+      count: 10
+      template:
+        and:
+          - "{{watchlist:topics_finserv_ai}}"
+          - "(bank OR lender OR underwriting OR credit decisioning OR risk OR fraud OR identity OR compliance)"
+
+
   # Global controls for news (optional)
   defaults:
     count: 10
@@ -155,4 +255,5 @@ archive:
 email:
   to:
     - msh.hill@outlook.com
+  subject_prefix: "Daily Digest"
 
