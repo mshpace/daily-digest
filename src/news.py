@@ -103,7 +103,7 @@ def _gdelt_search(query: str, lookback_hours: int, max_items: int) -> List[Dict[
     }
 
     # Backoff policy: 429/5xx -> retry
-    backoffs = [1, 2, 4, 8]  # seconds
+    backoffs = [5, 5, 10, 15]  # seconds
     last_err: Optional[Exception] = None
 
     for attempt, wait_s in enumerate([0] + backoffs):
