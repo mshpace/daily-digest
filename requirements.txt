@@ -11,3 +11,5 @@ pytz==2025.2
 google-auth==2.33.0
 google-auth-oauthlib==1.2.1
 google-api-python-client==2.143.0
+
+feedparser==6.0.11
