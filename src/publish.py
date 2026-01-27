@@ -1,41 +1,70 @@
 from __future__ import annotations
 
 import os
-from typing import Any, Dict, List
+from pathlib import Path
+from typing import Any, Dict, Optional
+
+from .utils import log
 
 
-def write_archive(cfg: Dict[str, Any], digest_date: str, html: str) -> str:
-    """Write <site_dir>/<YYYY-MM-DD>/index.html and return relative URL."""
-    site_dir = cfg["archive"]["site_dir"]
-    out_dir = os.path.join(site_dir, digest_date)
-    os.makedirs(out_dir, exist_ok=True)
-    out_path = os.path.join(out_dir, "index.html")
-    with open(out_path, "w", encoding="utf-8") as f:
-        f.write(html)
-    return f"./{digest_date}/"
+def _write_text(path: Path, text: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text, encoding="utf-8")
+
+
+def write_archive(cfg: Dict[str, Any], digest_date: str, html: str) -> Optional[str]:
+    """
+    Writes docs/YYYY-MM-DD/index.html by default.
+    Returns a relative archive URL path (for linking in email).
+    Never KeyErrors on missing config.
+    """
+    archive_cfg = cfg.get("archive", {}) or {}
+    enabled = bool(archive_cfg.get("enabled", True))
+    if not enabled:
+        return None
+
+    site_dir = archive_cfg.get("site_dir", "docs")
+    out_dir = Path(site_dir) / digest_date
+    out_path = out_dir / "index.html"
+    _write_text(out_path, html)
+
+    # GitHub Pages: if site_dir is docs, /daily-digest/YYYY-MM-DD/ is served depending on repo settings.
+    # We return a relative path; renderer will use it as-is.
+    return f"{digest_date}/"
 
 
 def update_home_index(cfg: Dict[str, Any]) -> None:
-    site_dir = cfg["archive"]["site_dir"]
-    keep = int(cfg["archive"].get("days_to_keep_on_home", 14))
+    """
+    Writes docs/index.html as a basic landing page listing latest digests.
+    Never KeyErrors on missing config.
+    """
+    archive_cfg = cfg.get("archive", {}) or {}
+    enabled = bool(archive_cfg.get("enabled", True))
+    if not enabled:
+        return
 
-    dates: List[str] = []
-    if os.path.isdir(site_dir):
-        for name in os.listdir(site_dir):
-            p = os.path.join(site_dir, name)
-            if os.path.isdir(p) and len(name) == 10 and name[4] == "-" and name[7] == "-":
-                dates.append(name)
+    site_dir = archive_cfg.get("site_dir", "docs")
+    root = Path(site_dir)
+    root.mkdir(parents=True, exist_ok=True)
 
+    # Find dated folders
+    dates = []
+    for p in root.iterdir():
+        if p.is_dir() and len(p.name) == 10 and p.name[4] == "-" and p.name[7] == "-":
+            if (p / "index.html").exists():
+                dates.append(p.name)
     dates.sort(reverse=True)
-    dates = dates[:keep]
 
-    links = "".join(f'<li><a href="./{d}/">{d}</a></li>' for d in dates)
-    html = f"""<html><head><meta charset='utf-8'><title>Daily Digest Archive</title></head>
-<body style="font-family: -apple-system, Segoe UI, Roboto, Arial, sans-serif; padding:24px;">
-  <h1>Daily Digest Archive</h1>
-  <ul>{links}</ul>
-</body></html>"""
+    items = "\n".join([f"<li><a href='{d}/'>{d}</a></li>" for d in dates[:60]])
+    html = f"""<html><head><meta charset="utf-8">
+    <style>
+      body {{ font-family: -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin: 24px; }}
+      .container {{ max-width: 780px; margin: 0 auto; }}
+    </style>
+    </head><body><div class="container">
+      <h1>Daily Digest Archive</h1>
+      <ul>{items}</ul>
+    </div></body></html>"""
 
-    os.makedirs(site_dir, exist_ok=True)
-    with open(os.path.join(site_dir, "index.html"), "w", encoding="utf-8") as f:
-        f.write(html)
+    _write_text(root / "index.html", html)
+    log(f"[archive] updated {site_dir}/index.html with {min(len(dates), 60)} entries")
