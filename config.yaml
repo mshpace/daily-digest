@@ -1,11 +1,65 @@
+# =========================
+# Core scheduling
+# =========================
+timezone: "America/Chicago"
+send_time_local: "08:00"
+
+# =========================
+# Archive / GitHub Pages
+# =========================
+archive:
+  enabled: true
+  site_dir: "docs"
+
+# =========================
+# Weather
+# =========================
+weather:
+  zips:
+    - "35209"
+    - "35541"
+    - "59758"
+  forecast_days: 7
+  include_alerts: true
+
+# =========================
+# Email (Resend)
+# =========================
+email:
+  to:
+    - "msh.hill@outlook.com"
+  subject_prefix: "Daily Digest"
+
+# =========================
+# Calendar
+# =========================
+calendar:
+  provider: "google"
+  days_ahead: 21
+
+# =========================
+# Inbox summary
+# =========================
+inbox_summary:
+  provider: "gmail"
+  max_messages: 200
+  detect_questions:
+    extra_phrases: []
+
+# =========================
+# News (RSS – NO GDELT)
+# =========================
 news:
   lookback_hours: 24
+
   defaults:
     count: 10
+
   rss:
     hl: "en-US"
     gl: "US"
     ceid: "US:en"
+
   sections:
     - name: "Birmingham (Local)"
       rss_query: 'Birmingham Alabama OR Jefferson County Alabama'
@@ -23,7 +77,7 @@ news:
       rss_query: '(inflation OR CPI OR Fed OR FOMC OR earnings OR recession OR GDP OR rates OR "treasury yields")'
       count: 10
 
-    - name: "Experian Updates (Products/Platform)"
+    - name: "Experian Updates (Products / Platform)"
       rss_query: '(Experian AND (launch OR product OR platform OR partnership OR acquisition OR integration OR earnings))'
       count: 10
 
