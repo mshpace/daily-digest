@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import datetime as dt
 import re
+import time
 from typing import Any, Dict, List, Optional
 
 import requests
@@ -15,7 +16,6 @@ def _quote_term(term: str) -> str:
     t = (term or "").strip()
     if not t:
         return ""
-    # Keep advanced GDELT fragments unchanged
     if ":" in t or any(op in t for op in [" AND ", " OR ", "(", ")", '"']):
         return t
     if any(ch.isspace() for ch in t):
@@ -101,22 +101,40 @@ def _gdelt_search(query: str, lookback_hours: int, max_items: int) -> List[Dict[
         "startdatetime": start_str,
         "sort": "HybridRel",
     }
-    r = requests.get("https://api.gdeltproject.org/api/v2/doc/doc", params=params, timeout=30)
-    r.raise_for_status()
-    data = r.json()
-    articles = data.get("articles", []) or []
 
-    out: List[Dict[str, Any]] = []
-    for a in articles[:max_items]:
-        out.append(
-            {
-                "title": a.get("title") or "",
-                "domain": a.get("domain") or "",
-                "url": a.get("url") or "",
-                "seendate": a.get("seendate") or "",
-            }
-        )
-    return out
+    # Backoff policy: 429/5xx -> retry
+    backoffs = [1, 2, 4, 8]  # seconds
+    last_err: Optional[Exception] = None
+
+    for attempt, wait_s in enumerate([0] + backoffs):
+        if wait_s:
+            time.sleep(wait_s)
+
+        try:
+            r = requests.get("https://api.gdeltproject.org/api/v2/doc/doc", params=params, timeout=30)
+            if r.status_code in (429, 500, 502, 503, 504):
+                raise RuntimeError(f"GDELT HTTP {r.status_code}: {r.text[:200]}")
+            r.raise_for_status()
+            data = r.json()
+            articles = data.get("articles", []) or []
+            out: List[Dict[str, Any]] = []
+            for a in articles[:max_items]:
+                out.append(
+                    {
+                        "title": a.get("title") or "",
+                        "domain": a.get("domain") or "",
+                        "url": a.get("url") or "",
+                        "seendate": a.get("seendate") or "",
+                    }
+                )
+            return out
+
+        except Exception as e:
+            last_err = e
+            if attempt == len(backoffs):
+                break
+
+    raise last_err or RuntimeError("GDELT failed")
 
 
 def build_news_sections(cfg: Dict[str, Any], now: dt.datetime) -> List[Dict[str, Any]]:
@@ -128,27 +146,29 @@ def build_news_sections(cfg: Dict[str, Any], now: dt.datetime) -> List[Dict[str,
 
     base_lookback = safe_int(news_cfg.get("lookback_hours", 24), 24)
     watchlists = news_cfg.get("watchlists", {}) or {}
+    throttle_s = float(news_cfg.get("throttle_seconds_between_sections", 1.5))
 
     out_sections: List[Dict[str, Any]] = []
-    for s in (news_cfg.get("sections", []) or []):
+    for idx, s in enumerate((news_cfg.get("sections", []) or [])):
         name = s.get("name", "News")
         s_type = s.get("type", "gdelt_template")
         count = safe_int(s.get("count", defaults.get("count", 10)), 10)
         lookback = safe_int(s.get("lookback_hours", base_lookback), base_lookback)
 
+        # small throttle between sections to reduce 429s
+        if idx > 0 and throttle_s > 0:
+            time.sleep(throttle_s)
+
         try:
             if s_type == "gdelt":
                 query = str(s["query"])
-            elif s_type == "gdelt_template":
+            else:
                 query = _build_query_from_template(
                     template=s.get("template", {}) or {},
                     watchlists=watchlists,
                     global_and=global_and,
                     exclude_domains=exclude_domains,
                 )
-            else:
-                log(f"[news] skipping unsupported type {s_type} for section '{name}'")
-                continue
 
             items = _gdelt_search(query=query, lookback_hours=lookback, max_items=count)
             out_sections.append(
@@ -169,4 +189,5 @@ def build_news_sections(cfg: Dict[str, Any], now: dt.datetime) -> List[Dict[str,
                     "data": {"items": [], "count": count, "lookback_hours": lookback, "query": "", "error": str(e)},
                 }
             )
+
     return out_sections
